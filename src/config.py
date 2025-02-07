@@ -28,18 +28,20 @@ fxs = {
 }
 
 # train
-train_ratio = 0.8
+split_ratio = (0.6, 0.3, 0.1)
 batch_size = 32
-ns_epoch = (50, 50)
-learn_rates = (1.0e-3, 5.0e-4)
-mrstft_weight = 0.2
+n_epoch_pt = 50
+n_epoch_ft = 50
+lr_pt = 1.0e-3
+lr_ft = 5.0e-5
+mrstft_weight = 0.1
 
 
 def save_hypara(exp_num):
     path = fx_estimate_path / "result" / ("hypara" + str(exp_num).zfill(3) + ".log")
     os.makedirs(path.parent, exist_ok=True)
     with open(path, "w") as f:
-        f.write(f"{train_ratio}\t{batch_size}\t{ns_epoch}\t{learn_rates}\t{mrstft_weight}\n")
+        f.write(f"{split_ratio}\t{batch_size}\t{n_epoch_pt}\t{n_epoch_ft}\t{lr_pt}\t{lr_ft}\t{mrstft_weight}\n")
 
 
 def get_hypara_path(exp_num):
@@ -64,11 +66,12 @@ def get_state_paths(exp_num, origin, fx):
     return paths
 
 
-def get_eval_path(exp_num, origin, fx):
+def get_eval_paths(exp_num, origin, fx):
     dir_path = fx_estimate_path / "result" / origin / fx
-    file_name = "eval" + str(exp_num).zfill(3) + ".log"
-    path = dir_path / file_name
-    return path
+    pretrain_file_name = "eval_pt" + str(exp_num).zfill(3) + ".log"
+    finetune_file_name = "eval_ft" + str(exp_num).zfill(3) + ".log"
+    paths = (dir_path / pretrain_file_name, dir_path / finetune_file_name)
+    return paths
 
 
 def get_wet_nums():
@@ -76,7 +79,7 @@ def get_wet_nums():
     Generate the dictionary of the data number in "gtfx_dataset".
 
     Returns:
-        wet_nums(dict): The dictionary of the data number.
+        dict: The dictionary of the data number.
     """
     # initialize dict
     wet_nums = {}
@@ -106,7 +109,7 @@ def get_signal_path(data_num, inst, fx=None):
         fx(str): Audio effect name.
 
     Returns:
-        file_path(pathlib.Path): Path to the audio file.
+        pathlib.Path: Path to the audio file.
     """
     if fx is None:
         dir_path = dry_signal_dataset_path / "data" / inst / "audio"
@@ -129,7 +132,7 @@ def get_label_path(data_num, inst, fx):
         fx(str): Audio effect name.
 
     Returns:
-        file_path(pathlib.Path): Path to the label file.
+        pathlib.Path: Path to the label file.
     """
     dir_path = wet_signal_dataset_path / "data" / inst / fx / "label"
     file_name = "gtfx" + str(data_num).zfill(8) + ".json"
@@ -145,15 +148,15 @@ def label_to_params(label):
         label(dict): Label of wet signal.
 
     Returns:
-        params(list): Audio effect parameters.
+        list: Audio effect parameters.
     """
     params = []
     fx = label["fx"]["type"]
     for param_name in fxs[fx]["params"].keys():
-        min = fxs[fx]["params"][param_name][0]
-        max = fxs[fx]["params"][param_name][1]
+        min_val = fxs[fx]["params"][param_name][0]
+        max_val = fxs[fx]["params"][param_name][1]
         param = label["fx"]["params"][param_name]
-        param = (param - min) / (max - min)
+        param = (param - min_val) / (max_val - min_val)
         params.append(param)
     return params
 
@@ -167,13 +170,13 @@ def params_to_dict(fx, params):
         params(list): Audio effect parameters.
 
     Returns:
-        param_dict(dict): Dictionary of effect parameters.
+        dict: Dictionary of effect parameters.
     """
     param_dict = {}
     for i, param_name in enumerate(fxs[fx]["params"].keys()):
-        min = fxs[fx]["params"][param_name][0]
-        max = fxs[fx]["params"][param_name][1]
-        param = params[i] * (max - min) + min
+        min_val = fxs[fx]["params"][param_name][0]
+        max_val = fxs[fx]["params"][param_name][1]
+        param = params[i] * (max_val - min_val) + min_val
         param_dict[param_name] = param
     return param_dict
 
@@ -186,7 +189,7 @@ def clip_param(fx, param_dict):
         param_dict(dict): Dictionary of effect parameters.
 
     Returns:
-        param_dict(dict): Dictionary of effect parameters which value is clipped.
+        dict: Dictionary of effect parameters which value is clipped.
     """
     for param_name in param_dict.keys():
         param_val = param_dict[param_name]
@@ -208,8 +211,9 @@ def wet_num_to_dry_num(wet_num):
         wet_num(int): Data number of the wet signal.
 
     Returns:
-        dry_use_num(int): Data number of the dry signal for using.
-        dry_origin_num(int): Data number of the dry signal used to generate the wet signal.
+        tuple: A tuple containing:
+            - int: Data number of the dry signal for using.
+            - int: Data number of the dry signal used to generate the wet signal.
     """
     n_dry_per_inst = len(strings) * len(frets)
     n_wet_per_dry = 0

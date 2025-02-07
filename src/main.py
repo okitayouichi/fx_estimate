@@ -7,6 +7,7 @@ import dataset
 import model
 import train
 import eval
+import criterion
 import torch
 import sys
 
@@ -18,25 +19,33 @@ for origin in config.origins:
     for fx in config.fxs.keys():
         torch.cuda.empty_cache()
         n_param = len(config.fxs[fx]["params"].keys())
+        log_path_pt, log_path_ft = config.get_log_paths(exp_num, origin, fx)
+        state_path_pt, state_path_ft = config.get_state_paths(exp_num, origin, fx)
+        eval_path_pt, eval_path_ft = config.get_eval_paths(exp_num, origin, fx)
 
         # load dataset
         fx_dataset = dataset.FxDataset(config.use, origin, fx)
         length = len(fx_dataset)
-        train_length = int(config.train_ratio * length)
-        split_len = [train_length, length - train_length]
-        train_dataset, eval_dataset = torch.utils.data.random_split(fx_dataset, split_len, generator=torch.Generator().manual_seed(42))
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=n_param * config.batch_size, shuffle=True, drop_last=True)
+        split_length = []
+        for ratio in config.split_ratio:
+            split_length.append(int(ratio * length))
+        pt_dataset, ft_dataset, eval_dataset = torch.utils.data.random_split(fx_dataset, split_length, generator=torch.Generator().manual_seed(42))
+        pt_loader = torch.utils.data.DataLoader(pt_dataset, batch_size=n_param * config.batch_size, shuffle=True, drop_last=True)
+        ft_loader = torch.utils.data.DataLoader(ft_dataset, batch_size=n_param * config.batch_size, shuffle=True, drop_last=True)
         eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=1, drop_last=True)
 
         # load model
         fx_inversion = model.FxInversion(n_param=n_param)
         fx_inversion.to(device)
 
-        # train
-        log_paths = config.get_log_paths(exp_num, origin, fx)
-        state_paths = config.get_state_paths(exp_num, origin, fx)
-        fx_inversion = train.train(train_loader, fx_inversion, config.ns_epoch, config.learn_rates, log_paths, state_paths, device)
+        # pretrain
+        train.pretrain(pt_loader, fx_inversion, config.n_epoch_pt, config.lr_pt, criterion.loss_pretrain, log_path_pt, state_path_pt, device)
 
         # evaluate
-        eval_path = config.get_eval_path(exp_num, origin, fx)
-        eval.eval(eval_loader, fx_inversion, fx, eval_path, device)
+        eval.eval_pretrain(eval_loader, fx_inversion, fx, eval_path_pt, device)
+
+        # finetune
+        train.finetune(ft_loader, fx_inversion, config.n_epoch_ft, config.lr_ft, criterion.loss_finetune, log_path_ft, state_path_ft, device)
+
+        # evaluate
+        eval.eval_finetune(eval_loader, fx_inversion, fx, eval_path_ft, device)

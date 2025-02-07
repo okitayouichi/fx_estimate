@@ -41,7 +41,7 @@ class FxDataset(torch.utils.data.Dataset):
         dry_signal_origin, _ = torchaudio.load(str(dry_signal_origin_path))
         wet_signal, _ = torchaudio.load(str(wet_signal_path))
         param = self.params[index]
-        return dry_signal_origin, dry_signal_use, wet_signal, param
+        return wet_num, dry_signal_origin, dry_signal_use, wet_signal, param
 
     def __len__(self):
         length = len(self.wet_nums)

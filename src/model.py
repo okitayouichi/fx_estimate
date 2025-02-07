@@ -79,8 +79,8 @@ class FxInversion(nn.Module):
         p_fc_depth=2,
         p_ch_rate_conv=2,
         p_ch_rate_fc=0.5,
-        p_kernel=4,
-        p_stride=2,
+        p_kernel=8,
+        p_stride=4,
     ):
         super().__init__()
         self.layer_depth = layer_depth
@@ -202,8 +202,9 @@ class FxInversion(nn.Module):
             x(torch.Tensor): Wet audio signal. shape: (B, C, T)
 
         Returns:
-            x(torch.Tensor): Estimated dry audio signal. shape: (B, C, T)
-            fx_param(torch.Tensor): Estimated effect parameter. shape: (B, n_param)
+            tuple: A tuple containing:
+                - torch.Tensor: Estimated dry audio signal. shape: (B, C, T)
+                - torch.Tensor: Estimated effect parameter. shape: (B, n_param)
         """
         length = x.shape[-1]
         x_t = x
@@ -332,7 +333,7 @@ class FxParamEstimate(nn.Module):
             x(torch.Tensor): Time series feature. shape: (B, C, T)
 
         Returns:
-            mean + max(torch.Tensor): Pooled feature. shape: (B, C)
+            torch.Tensor: Pooled feature. shape: (B, C)
         """
         mean = torch.mean(x, dim=-1)
         max = torch.max(x, dim=-1).values
@@ -345,7 +346,7 @@ class FxParamEstimate(nn.Module):
             x_f(torch.Tensor): Freqency domain feature from cross-domain transformer in FxInversion. shape: (B, C, F*T2)
 
         Returns:
-            x(torch.Tensor): Estimated effect parameter. shape: (B, n_param)
+            torch.Tensor: Estimated effect parameter. shape: (B, n_param)
         """
         for depth in range(self.conv_depth):
             conv_t = self.convs_t[depth]

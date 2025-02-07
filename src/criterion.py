@@ -7,6 +7,10 @@ import torch
 import auraloss
 import pedalboard as pb
 
+loss_mae = torch.nn.L1Loss()
+loss_mse = torch.nn.MSELoss()
+loss_mrstft = auraloss.freq.MultiResolutionSTFTLoss()
+
 
 def loss_pretrain(dry_signal_origin, dry_signal_est, param, param_est, mrstft_weight=config.mrstft_weight):
     """
@@ -20,17 +24,15 @@ def loss_pretrain(dry_signal_origin, dry_signal_est, param, param_est, mrstft_we
         mrstft_weight(float): Weight of MRSTFT loss.
 
     Returns:
-        loss[0](torch.Tensor): MRSTFT loss.
-        loss[1](torch.Tensor): MSE loss.
-        loss[2](torch.Tensor): Linear sum of MRSTFT and MSE loss.
+        tuple: A tuple containing:
+            - torch.Tensor: MRSTFT loss.
+            - torch.Tensor: MSE loss.
+            - torch.Tensor: Linear sum of MRSTFT and MSE loss.
     """
-    loss_mrstft = auraloss.freq.MultiResolutionSTFTLoss()
-    loss_mse = torch.nn.MSELoss()
-    loss = []
-    loss.append(loss_mrstft(dry_signal_origin, dry_signal_est))
-    loss.append(loss_mse(param, param_est))
-    loss.append(mrstft_weight * loss[0] + loss[1])
-    return loss[0], loss[1], loss[2]
+    mrstft = loss_mrstft(dry_signal_origin, dry_signal_est)
+    mse = loss_mse(param, param_est)
+    loss = mrstft_weight * mrstft + mse
+    return mrstft, mse, loss
 
 
 def loss_finetune(dry_signal_use, dry_signal_est):
@@ -42,9 +44,8 @@ def loss_finetune(dry_signal_use, dry_signal_est):
         dry_signal_est(torch.Tensor): Estimated dry signal. shape: (B, C, T)
 
     Returns:
-        loss(torch.Tensor): MRSTFT loss.
+        torch.Tensor: MRSTFT loss.
     """
-    loss_mrstft = auraloss.freq.MultiResolutionSTFTLoss()
     loss = loss_mrstft(dry_signal_use, dry_signal_est)
     return loss
 
@@ -61,7 +62,7 @@ def loss_reconst(wet_signal, dry_signal, fx, param):
         param(torch.Tensor): Audio effect parameters. shape: (1, n_param)
 
     Returns:
-        loss(float): MRSTFT reconstruction loss.
+        float: MRSTFT reconstruction loss.
     """
     param = param.squeeze(0).tolist()
     param = config.params_to_dict(fx, param)
@@ -71,7 +72,6 @@ def loss_reconst(wet_signal, dry_signal, fx, param):
     wet_signal_reconst = apply_fx(dry_signal, fx, param)
     wet_signal = norm_loudness(wet_signal)
     wet_signal_reconst = norm_loudness(torch.tensor(wet_signal_reconst).to(device).unsqueeze(0))
-    loss_mrstft = auraloss.freq.MultiResolutionSTFTLoss()
     loss = loss_mrstft(wet_signal, wet_signal_reconst).item()  # without grad
     return loss
 
@@ -86,7 +86,7 @@ def apply_fx(dry_signal, fx, param):
         param(dict): Audio effect parameter keywords.
 
     Returns:
-        wet_signal(numpy.array): Wet signal. shape: (C, T)
+        numpy.array: Wet signal. shape: (C, T)
     """
     plugin = config.fxs[fx]["plugin"]
     board = pb.Pedalboard([plugin(**param)])
@@ -104,7 +104,7 @@ def norm_loudness(signal, rms_target=0.1, eps=1.0e-8):
         eps(float): Small value to avoid division by zero.
 
     Returns:
-        signal(torch.Tensor): Audio signal with normalized loudness.
+        torch.Tensor: Audio signal with normalized loudness.
     """
     rms = torch.sqrt(torch.mean(signal**2))
     rms = max(rms, eps)
