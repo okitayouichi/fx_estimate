@@ -27,7 +27,7 @@ class FxInversion(nn.Module):
         # STFT
         nfft=4096,
         # main structure
-        layer_depth=2,
+        layer_depth=3,
         # frequency embedding
         freq_emb=0.2,
         emb_scale=10,
